@@ -8,11 +8,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from backend.control_model import SegwayControlModel
+from control_model import SegwayControlModel
 
 app = FastAPI(
-    title="Digital Twin Segway / Inverted Pendulum API",
-    description="Real-time control systems simulation with State Feedback & Luenberger Observer",
+    title="Digital Twin of Inverted Pendulum API",
+    description="Real-time control systems simulation with State Feedback & Observer",
     version="1.0.0"
 )
 
