@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Twin: Segway / Inverted Pendulum Control Dashboard</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        slate: {
+                            850: '#111827',
+                            950: '#020617',
+                        }
+                    },
+                    fontFamily: {
+                        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+
+    <style>
+        /* Custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col selection:bg-sky-500/30 selection:text-sky-200">
+
+    <!-- Header Navigation Bar -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 px-4 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 via-indigo-500 to-emerald-400 p-0.5 flex items-center justify-center shadow-lg shadow-sky-500/10">
+                <div class="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
+                    <svg class="w-5 h-5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle cx="12" cy="18" r="3" stroke-width="2"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15V3m0 0l-3 3m3-3l3 3"/>
+                    </svg>
+                </div>
+            </div>
+            <div>
+                <h1 class="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                    Digital Twin: Segway / Inverted Pendulum
+                    <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">Production Control</span>
+                </h1>
+                <p class="text-xs text-slate-400">Nonlinear Cart-Pendulum • State-Feedback Pole Placement (<span class="font-mono text-sky-400">u = -Kx</span>) • Luenberger Observer (<span class="font-mono text-amber-400">L</span>)</p>
+            </div>
+        </div>
+
+        <div class="flex items-center flex-wrap gap-2.5">
+            <!-- Stability Badge -->
+            <div id="badgeStability" class="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                STABLE (EQUILIBRIUM)
+            </div>
+
+            <!-- API Connection Badge -->
+            <div id="badgeConnection" class="relative flex items-center bg-slate-900 px-2.5 py-1 rounded-full border border-slate-800 text-xs">
+                <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+                <span class="ml-2 text-slate-400 font-mono">Connecting...</span>
+            </div>
+
+            <!-- Simulation Clock -->
+            <div class="px-3 py-1 bg-slate-900 rounded-lg border border-slate-800 flex items-center gap-1.5 font-mono text-xs text-slate-300">
+                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10" stroke-width="2"/>
+                    <polyline points="12 6 12 12 16 14" stroke-width="2"/>
+                </svg>
+                <span id="textTime">0.00s</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Dashboard Container -->
+    <main class="flex-1 p-4 lg:p-6 max-w-[1750px] w-full mx-auto grid grid-cols-1 xl:grid-cols-12 gap-6">
+
+        <!-- ================= LEFT COLUMN: CANVAS VIEWPORT & INTERACTIVE CONTROLS ================= -->
+        <section class="xl:col-span-7 flex flex-col gap-4">
+
+            <!-- Physical Simulation Viewport Card -->
+            <div class="bg-slate-900/90 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col">
+                <!-- Card Header -->
+                <div class="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
+                        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300">Physical Simulation Viewport (Canvas 60 FPS)</h2>
+                    </div>
+                    <div class="flex items-center gap-2 text-[11px] text-slate-400">
+                        <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span> Plant True State</span>
+                        <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block border border-dashed border-amber-300"></span> Observer Estimate</span>
+                    </div>
+                </div>
+
+                <!-- Canvas Viewport -->
+                <div class="relative w-full h-[370px] bg-slate-950 flex items-center justify-center overflow-hidden">
+                    <canvas id="physicsCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+                    
+                    <!-- Viewport Floating Hint -->
+                    <div class="absolute bottom-3 right-4 text-[10px] font-mono text-slate-400 bg-slate-900/80 px-2 py-1 rounded border border-slate-800 pointer-events-none">
+                        Scale: 1.0 m = 200 px | dt = 0.05s
+                    </div>
+                </div>
+
+                <!-- Simulation Control Actions Bar -->
+                <div class="p-3 bg-slate-900/90 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <!-- Play/Pause -->
+                        <button id="btnPlayPause" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1.5 transition">
+                            <svg id="playPauseIcon" class="w-3.5 h-3.5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span id="playPauseText">Pause</span>
+                        </button>
+
+                        <!-- Reset System -->
+                        <button id="btnReset" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition hover:border-slate-600 active:scale-95" title="Reset system to initial tilt θ = 0.15 rad [R]">
+                            <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Reset System (θ = 0.15 rad)
+                        </button>
+
+                        <!-- Push Impulse Buttons -->
+                        <div class="flex items-center rounded-lg border border-slate-700 bg-slate-800 p-0.5">
+                            <button id="btnImpulseLeft" class="px-2.5 py-1 rounded text-xs font-medium text-slate-200 hover:bg-slate-700 hover:text-rose-300 flex items-center gap-1 transition active:scale-95" title="Disturbance Push Left -15N [←]">
+                                <svg class="w-3 h-3 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                                </svg>
+                                -15 N
+                            </button>
+                            <span class="w-px h-4 bg-slate-700 mx-0.5"></span>
+                            <span class="px-1.5 text-[10px] text-slate-400 font-mono">PUSH</span>
+                            <span class="w-px h-4 bg-slate-700 mx-0.5"></span>
+                            <button id="btnImpulseRight" class="px-2.5 py-1 rounded text-xs font-medium text-slate-200 hover:bg-slate-700 hover:text-rose-300 flex items-center gap-1 transition active:scale-95" title="Disturbance Push Right +15N [→]">
+                                +15 N
+                                <svg class="w-3 h-3 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Sensor Noise Toggle -->
+                    <div class="flex items-center gap-2">
+                        <button id="btnToggleNoise" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-2 transition active:scale-95" title="Toggle Gaussian measurement noise [N]">
+                            <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                            <span>Sensor Noise:</span>
+                            <span id="noiseStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700">OFF</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real-Time State Telemetry Stat Cards Grid -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <!-- 1. Position p -->
+                <div class="bg-slate-900/90 p-3 rounded-xl border border-slate-800 flex flex-col">
+                    <span class="text-[10px] font-mono uppercase text-slate-400 tracking-wider">Cart Pos (p)</span>
+                    <span id="metricP" class="text-base font-bold font-mono text-sky-400 mt-1">0.000 m</span>
+                    <span class="text-[9px] text-slate-400 mt-0.5">Target: 0.000 m</span>
+                </div>
+
+                <!-- 2. Velocity p_dot -->
+                <div class="bg-slate-900/90 p-3 rounded-xl border border-slate-800 flex flex-col">
+                    <span class="text-[10px] font-mono uppercase text-slate-400 tracking-wider">Cart Vel (ṗ)</span>
+                    <span id="metricPDot" class="text-base font-bold font-mono text-indigo-400 mt-1">0.000 m/s</span>
+                    <span class="text-[9px] text-slate-400 mt-0.5">Linear velocity</span>
+                </div>
+
+                <!-- 3. Angle theta -->
+                <div class="bg-slate-900/90 p-3 rounded-xl border border-slate-800 flex flex-col">
+                    <span class="text-[10px] font-mono uppercase text-slate-400 tracking-wider">Angle (θ)</span>
+                    <span id="metricTheta" class="text-base font-bold font-mono text-emerald-400 mt-1">0.150 rad</span>
+                    <span class="text-[9px] text-slate-400 mt-0.5">Upright: 0.000 rad</span>
+                </div>
+
+                <!-- 4. Angular Vel theta_dot -->
+                <div class="bg-slate-900/90 p-3 rounded-xl border border-slate-800 flex flex-col">
+                    <span class="text-[10px] font-mono uppercase text-slate-400 tracking-wider">Ang Vel (θ̇)</span>
+                    <span id="metricThetaDot" class="text-base font-bold font-mono text-pink-400 mt-1">0.000 rad/s</span>
+                    <span class="text-[9px] text-slate-400 mt-0.5">Angular rate</span>
+                </div>
+
+                <!-- 5. Control Force u -->
+                <div class="bg-slate-900/90 p-3 rounded-xl border border-slate-800 flex flex-col">
+                    <span class="text-[10px] font-mono uppercase text-slate-400 tracking-wider">Force (u)</span>
+                    <span id="metricU" class="text-base font-bold font-mono text-purple-400 mt-1">0.00 N</span>
+                    <span class="text-[9px] text-slate-400 mt-0.5">u = -Kx input</span>
+                </div>
+
+                <!-- 6. Observer Error Norm -->
+                <div class="bg-slate-900/90 p-3 rounded-xl border border-slate-800 flex flex-col">
+                    <span class="text-[10px] font-mono uppercase text-slate-400 tracking-wider">Obs Error ||e||</span>
+                    <span id="metricErrNorm" class="text-base font-bold font-mono text-rose-400 mt-1">0.0000</span>
+                    <span class="text-[9px] text-slate-400 mt-0.5">||x - x̂||</span>
+                </div>
+            </div>
+
+            <!-- Controller Configuration & Mode Panel -->
+            <div class="bg-slate-900/90 p-4 rounded-2xl border border-slate-800 flex flex-col gap-3">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+                        </svg>
+                        Closed-Loop Feedback Architecture
+                    </h3>
+                    <span class="text-[11px] text-slate-400 font-mono">Separation Principle</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label class="flex items-start gap-3 p-2.5 rounded-xl border border-sky-500/30 bg-sky-950/20 cursor-pointer hover:bg-sky-950/40 transition">
+                        <input type="radio" id="modeStateFeedback" name="controlMode" value="state_feedback" checked class="mt-1 text-sky-500 focus:ring-sky-500">
+                        <div>
+                            <div class="text-xs font-bold text-sky-300">Full-State Feedback [u = -Kx]</div>
+                            <div class="text-[11px] text-slate-400 leading-tight mt-0.5">Control utilizes true plant state vector. Observer simultaneously estimates states for telemetry verification.</div>
+                        </div>
+                    </label>
+
+                    <label class="flex items-start gap-3 p-2.5 rounded-xl border border-slate-800 bg-slate-950/40 cursor-pointer hover:bg-slate-950/80 transition">
+                        <input type="radio" id="modeObserverFeedback" name="controlMode" value="observer_feedback" class="mt-1 text-sky-500 focus:ring-sky-500">
+                        <div>
+                            <div class="text-xs font-bold text-slate-300">Observer-Based Feedback [u = -Kx̂]</div>
+                            <div class="text-[11px] text-slate-400 leading-tight mt-0.5">Control uses observer estimated state <span class="font-mono text-amber-400">x̂</span> computed purely from cart measurement <span class="font-mono text-amber-400">y = Cx</span>.</div>
+                        </div>
+                    </label>
+                </div>
+
+                <!-- Keyboard shortcuts bar -->
+                <div class="flex flex-wrap items-center justify-between text-[11px] text-slate-400 pt-1 font-mono">
+                    <span class="flex items-center gap-1.5"><kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">Space</kbd> Play / Pause</span>
+                    <span class="flex items-center gap-1.5"><kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">R</kbd> Reset</span>
+                    <span class="flex items-center gap-1.5"><kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">←</kbd> <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">→</kbd> Push Impulse</span>
+                    <span class="flex items-center gap-1.5"><kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">N</kbd> Toggle Noise</span>
+                </div>
+            </div>
+
+            <!-- Mathematical State-Space Matrices & Gains Drawer -->
+            <div class="bg-slate-900/90 rounded-2xl border border-slate-800 p-4">
+                <details class="group">
+                    <summary class="flex items-center justify-between cursor-pointer list-none">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-emerald-400 transition group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                            </svg>
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">State-Space Matrices (A, B, C) & Gains (K, L)</h3>
+                        </div>
+                        <span class="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Click to Inspect Math</span>
+                    </summary>
+                    <div id="modelInfoContent" class="mt-4 pt-4 border-t border-slate-800">
+                        <div class="text-xs text-slate-400 font-mono">Loading model matrices from FastAPI backend...</div>
+                    </div>
+                </details>
+            </div>
+        </section>
+
+        <!-- ================= RIGHT COLUMN: STACKED REAL-TIME TELEMETRY CHARTS ================= -->
+        <section class="xl:col-span-5 flex flex-col gap-4">
+
+            <!-- Chart 1: State Trajectories -->
+            <div class="bg-slate-900/90 rounded-2xl border border-slate-800 p-4 shadow-xl flex flex-col">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-200">State Trajectories [p, ṗ, θ, θ̇]</h3>
+                    </div>
+                    <span class="text-[10px] font-mono text-slate-400">Rolling Window (80 samples)</span>
+                </div>
+                <div class="w-full h-[180px]">
+                    <canvas id="stateChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Chart 2: Observer Tracking (True vs Estimated) -->
+            <div class="bg-slate-900/90 rounded-2xl border border-slate-800 p-4 shadow-xl flex flex-col">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-200">Observer Validation: θ(t) vs θ̂(t)</h3>
+                    </div>
+                    <span class="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">Luenberger Estimation</span>
+                </div>
+                <div class="w-full h-[180px]">
+                    <canvas id="observerChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Chart 3: Control Input Effort & Disturbance -->
+            <div class="bg-slate-900/90 rounded-2xl border border-slate-800 p-4 shadow-xl flex flex-col">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-200">Actuator Force u(t) & Disturbance</h3>
+                    </div>
+                    <span class="text-[10px] font-mono text-purple-400">u = -Kx [N]</span>
+                </div>
+                <div class="w-full h-[180px]">
+                    <canvas id="controlChart"></canvas>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800/80 bg-slate-900/40 px-6 py-3 text-center text-xs text-slate-400 font-mono flex flex-wrap items-center justify-between gap-2">
+        <div>Control Systems II • State-Space Representation • Pole Placement & Luenberger Observer</div>
+        <div>FastAPI + Tailwind CSS + HTML5 Canvas + Chart.js</div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="js/charts.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
